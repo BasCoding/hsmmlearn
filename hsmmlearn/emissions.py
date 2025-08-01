@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 
 import numpy as np
-from scipy.stats import norm
+from scipy.stats import norm, multivariate_normal
 
 from .utils import NonParametricDistribution
 
@@ -187,3 +187,41 @@ class GaussianEmissions(AbstractEmissions):
 
         self.means = new_means
         self.scales = new_scales
+
+
+class GMMEmissions(AbstractEmissions):
+    dtype = np.float64
+
+    def __init__(self, weights, mus, covs):
+        """
+        Parameters
+        ----------
+        weights : list of arrays
+            weights[s][m] is the weight of mixture component m in state s
+        mus : list of arrays
+            mus[s][m] is the mean vector of mixture component m in state s
+        covs : list of arrays
+            covs[s][m] is the covariance matrix of mixture component m in state s
+        """
+        self.weights = weights
+        self.mus = mus
+        self.covs = covs
+        self.n_states = len(weights)
+
+    def likelihood(self, obs):
+        obs = np.atleast_2d(obs)  # shape (T, D)
+        T = obs.shape[0]
+        likelihoods = np.zeros((self.n_states, T))
+
+        for s in range(self.n_states):
+            likelihood_s = np.zeros(T)
+            for w, mu, cov in zip(self.weights[s], self.mus[s], self.covs[s]):
+                likelihood_s += w * multivariate_normal.pdf(obs, mean=mu, cov=cov)
+            likelihoods[s] = likelihood_s + 1e-12  # Numerical stability
+        return likelihoods
+
+    def sample_for_state(self, state, size=None):
+        component = np.random.choice(len(self.weights[state]), p=self.weights[state])
+        return multivariate_normal.rvs(self.mus[state][component],
+                                       self.covs[state][component],
+                                       size=size)
