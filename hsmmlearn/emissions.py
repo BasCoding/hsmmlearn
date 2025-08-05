@@ -193,35 +193,32 @@ class GMMEmissions(AbstractEmissions):
     dtype = np.float64
 
     def __init__(self, weights, mus, covs):
-        """
-        Parameters
-        ----------
-        weights : list of arrays
-            weights[s][m] is the weight of mixture component m in state s
-        mus : list of arrays
-            mus[s][m] is the mean vector of mixture component m in state s
-        covs : list of arrays
-            covs[s][m] is the covariance matrix of mixture component m in state s
-        """
-        self.weights = weights
-        self.mus = mus
-        self.covs = covs
+        self.weights  = weights
+        self.mus      = mus
+        self.covs     = covs
         self.n_states = len(weights)
 
     def likelihood(self, obs):
-        obs = np.atleast_2d(obs)  # shape (T, D)
-        T = obs.shape[0]
-        likelihoods = np.zeros((self.n_states, T))
+        # obs: shape (T, D)
+        obs = np.atleast_2d(obs)
+        T, D = obs.shape
 
+        # allocate (T, n_states)
+        lik = np.zeros((T, self.n_states), dtype=self.dtype)
+
+        # for each state, accumulate mixture density at each time t
         for s in range(self.n_states):
-            likelihood_s = np.zeros(T)
+            # start with zeros for this column
+            column = np.zeros(T, dtype=self.dtype)
             for w, mu, cov in zip(self.weights[s], self.mus[s], self.covs[s]):
-                likelihood_s += w * multivariate_normal.pdf(obs, mean=mu, cov=cov)
-            likelihoods[s] = likelihood_s + 1e-12  # Numerical stability
-        return likelihoods
+                # multivariate_normal.pdf(obs, ...) returns array shape (T,)
+                column += w * multivariate_normal.pdf(obs, mean=mu, cov=cov)
+            lik[:, s] = column + 1e-12     # small floor for numerical stability
+        lik = np.ascontiguousarray(lik, dtype=np.float64)
+        return lik
 
     def sample_for_state(self, state, size=None):
-        component = np.random.choice(len(self.weights[state]), p=self.weights[state])
-        return multivariate_normal.rvs(self.mus[state][component],
-                                       self.covs[state][component],
+        comp = np.random.choice(len(self.weights[state]), p=self.weights[state])
+        return multivariate_normal.rvs(self.mus[state][comp],
+                                       self.covs[state][comp],
                                        size=size)
